@@ -1,0 +1,30 @@
+# --- Dependencies ---
+node_modules/
+client/node_modules/
+server/node_modules/
+package-lock.json      # Optional: Some teams keep this, but for solo projects, it's safe to ignore if it causes conflicts.
+
+# --- Security (CRITICAL) ---
+.env
+server/.env
+client/.env
+
+# --- Build Outputs ---
+client/build/
+client/dist/
+dist/
+
+# --- Logs ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs
+*.log
+
+# --- OS System Files ---
+.DS_Store             # Mac
+Thumbs.db             # Windows
+
+# --- IDE Settings ---
+.vscode/
+.idea/
