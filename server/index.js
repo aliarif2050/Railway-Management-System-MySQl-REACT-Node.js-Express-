@@ -84,27 +84,27 @@ app.post('/api/book', (req, res) => {
     const sqlTicket = "INSERT INTO Ticket (User_ID, Status_ID, Status, Booking_Date) VALUES (?, ?, 'Confirmed', NOW())";
     db.query(sqlTicket, [userId, statusId], (err, result) => {
         if (err) return res.status(500).json(err);
-        
+
         const pnr = result.insertId;
-        
+
         // Step 2: Add Passengers
         const sqlPassenger = "INSERT INTO Passenger (PNR_No, Name, Age, Gender, Seat_Category) VALUES ?";
         const passengerValues = passengers.map(p => [pnr, p.name, p.age, p.gender, seatType]);
-        
+
         db.query(sqlPassenger, [passengerValues], (err, result) => {
             if (err) return res.status(500).json(err);
-        
+
             // Step 3: Update Seat Count
             const colName = seatType === 'AC' ? 'AC_Seats_Available' : 'Gen_Seats_Available';
             const sqlUpdate = `UPDATE Train_Status SET ${colName} = ${colName} - ? WHERE Status_ID = ?`;
-            
+
             db.query(sqlUpdate, [passengers.length, statusId], (err, result) => {
                 if (err) return res.status(500).json(err);
                 res.json({ message: "Booking Successful", pnr: pnr });
             });
         });
     });
-    
+
 });
 
 // 5. GET MY BOOKINGS (UPDATED: With Passenger Details)
@@ -115,7 +115,7 @@ app.get('/api/my-bookings/:userId', (req, res) => {
             t.Train_Name, ts.Journey_Date,
             ts.Fare_AC, ts.Fare_Gen,
             s1.Station_Name as Source, s2.Station_Name as Dest,
-            p.Name as PassengerName, p.Age, p.Gender, p.Seat_Category , p.discount
+            p.Passenger_ID, p.Name as PassengerName, p.Age, p.Gender, p.Seat_Category , p.discount
         FROM Ticket tic
         JOIN Train_Status ts ON tic.Status_ID = ts.Status_ID
         JOIN Train t ON ts.Train_ID = t.Train_ID
@@ -146,13 +146,14 @@ app.get('/api/my-bookings/:userId', (req, res) => {
                     passengers: [],
                 };
             }
-            
+
             const priceString = row.Seat_Category === 'AC' ? row.Fare_AC : row.Fare_Gen;
             const discount = row.discount === 0.0 ? 0 : (priceString * row.discount);
             const priceStringWithDiscount = priceString - discount;
             const price = parseFloat(priceStringWithDiscount);
             bookingsMap[row.PNR_No].totalfare += price;
             bookingsMap[row.PNR_No].passengers.push({
+                passengerId: row.Passenger_ID,
                 name: row.PassengerName,
                 age: row.Age,
                 gender: row.Gender,
@@ -163,6 +164,42 @@ app.get('/api/my-bookings/:userId', (req, res) => {
 
         // Convert object back to array
         res.json(Object.values(bookingsMap));
+    });
+});
+
+// Cancel Passenger
+app.post('/api/cancel-passenger', (req, res) => {
+    const { passengerId, totalfare , discount} = req.body;
+    const getPassengerSql = "SELECT PNR_No, Seat_Category FROM Passenger WHERE Passenger_ID = ?";
+    db.query(getPassengerSql, [passengerId], (err, results) => {
+        if (err) return res.status(500).json(err);
+        if (results.length === 0) return res.status(404).json("Passenger not found");
+        const { PNR_No, Seat_Category } = results[0];
+        const colName = Seat_Category === 'AC' ? 'AC_Seats_Available' : 'Gen_Seats_Available';
+        const getStatus = `Select t.Status_ID from ticket t join passenger p on t.PNR_No = p.PNR_No where p.Passenger_ID = ? `;
+        db.query(getStatus, [passengerId], (err, statusResults) => {
+            if (err) return res.status(500).json(err);
+            const Status_ID = statusResults[0].Status_ID;
+            const updateSeatsSql = `UPDATE Train_Status SET ${colName} = ${colName} + ? WHERE Status_ID = ?`;
+            db.query(updateSeatsSql, [1, Status_ID], (err, result) => {
+                if (err) return res.status(500).json(err);
+                const deletePassengerSql = `delete from passenger where Passenger_ID = ?`;
+                db.query(deletePassengerSql, [passengerId], (err, result) => {
+                    if (err) return res.status(500).json(err);
+                    const updateFare = `select ts.Fare_AC, ts.Fare_Gen from Train_Status ts where ts.Status_ID = ?`;
+                    db.query(updateFare, [Status_ID], (err, fareResults) => {
+                        if (err) return res.status(500).json(err);
+                        const fareAC = fareResults[0].Fare_AC;
+                        const fareGen = fareResults[0].Fare_Gen;
+                        const seatFare = Seat_Category === 'AC' ? fareAC : fareGen;
+                        const discountAmount = discount === 0.0 ? 0 : (seatFare * discount);
+                        const finalSeatFare = seatFare - discountAmount;                        
+                        const newTotalFare = totalfare - finalSeatFare;
+                        res.json({ message: "Passenger Cancelled Successfully", newTotalFare });
+                    });
+                });
+            });
+        });
     });
 });
 

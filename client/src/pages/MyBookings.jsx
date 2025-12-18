@@ -15,7 +15,37 @@ function MyBookings({ user }) {
 
   useEffect(() => {
     fetchBookings();
-  }, [user]);
+  }, []);
+
+  const handlePassengerCancel = async (passengerId, totalfare, discount, pnr) => {
+  if (!window.confirm("Are you sure you want to cancel this ticket? This cannot be undone.")) return;
+
+  try {
+    const res = await axios.post(
+      'http://localhost:5000/api/cancel-passenger',
+      { passengerId, totalfare, discount }
+    );
+
+    const { newTotalFare } = res.data;
+
+    setBookings(prev =>
+      prev.map(b =>
+        b.pnr === pnr
+          ? {
+              ...b,
+              totalfare: newTotalFare,
+              passengers: b.passengers.filter(p => p.passengerId !== passengerId)
+            }
+          : b
+      )
+    );
+
+  } catch (error) {
+    console.error(error);
+    alert("Error cancelling passenger");
+  }
+};
+
 
   // Handle Cancellation
   const handleCancel = async (pnr) => {
@@ -70,6 +100,7 @@ function MyBookings({ user }) {
                       <th className="p-2">Age</th>
                       <th className="p-2">Gender</th>
                       <th className="p-2">Class</th>
+                     
                     </tr>
                   </thead>
                   <tbody>
@@ -84,7 +115,10 @@ function MyBookings({ user }) {
                         </td>
                         <td className="p-2">{p.age}</td>
                         <td className="p-2">{p.gender}</td>
-                        <td className="p-2 font-semibold">{p.seat}</td>
+                        <td className="p-2 font-semibold">{p.seat}
+                          {b.status !== 'Cancelled' && <span className='p-2 ml-4'> <button onClick={()=>handlePassengerCancel(p.passengerId,b.totalfare,p.discount, b.pnr)} className='bg-red-100 text-red-700 px-4 py-2 rounded text-sm font-bold
+                           hover:bg-red-200 border border-red-300 transition'>Cancel</button></span>}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
